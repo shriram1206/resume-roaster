@@ -1,0 +1,43 @@
+SHRIRAM KUMAR
+Software Developer
+Email: shriram@example.com | Phone: +91-9876543210
+LinkedIn: linkedin.com/in/shriram | GitHub: github.com/shriram
+
+SUMMARY
+Passionate Computer Science student with experience in Java, Spring Boot, and React. 
+Looking for opportunities at product-based companies.
+
+EDUCATION
+B.Tech in Computer Science and Engineering
+XYZ Engineering College, Chennai | 2021-2025
+CGPA: 8.5/10
+
+SKILLS
+Languages: Java, Python, JavaScript, SQL
+Frameworks: Spring Boot, React, Node.js
+Databases: PostgreSQL, MongoDB
+Tools: Git, Docker, Maven
+
+PROJECTS
+1. E-Commerce Platform (Jan 2024)
+   - Built a full-stack e-commerce application using Spring Boot and React
+   - Implemented user authentication and payment integration
+   - Technologies: Java, Spring Boot, React, PostgreSQL
+
+2. Task Management App (Aug 2023)
+   - Developed a task tracking application with drag-and-drop functionality
+   - Built REST APIs for CRUD operations
+   - Technologies: Node.js, Express, MongoDB
+
+EXPERIENCE
+Software Intern | ABC Tech Solutions | May 2024 - July 2024
+- Worked on backend development using Spring Boot
+- Fixed bugs and improved API response times
+
+CERTIFICATIONS
+- AWS Cloud Practitioner
+- Java Full Stack Development - Udemy
+
+ACHIEVEMENTS
+- Won 2nd place in college hackathon
+- Open source contributor

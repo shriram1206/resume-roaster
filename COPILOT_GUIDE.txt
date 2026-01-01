@@ -1,0 +1,337 @@
+/*
+ * ═══════════════════════════════════════════════════════════════════════════
+ * RESUME ROASTER – FULL-STACK TIER 2 PLACEMENT PROJECT
+ * GitHub Copilot Guide (Backend + Frontend Overview)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * GOAL:
+ * Build a full-stack AI resume reviewer for CSE students targeting Tier 2
+ * companies (Zoho, Freshworks, PayTM, Flipkart, PhonePe). Backend is Java
+ * Spring Boot + PostgreSQL + Ollama (local LLM). Frontend is React.
+ *
+ * Focus: Ship a clean, production-like MVP in ~4 weeks that looks impressive
+ * in interviews and on GitHub.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * HIGH-LEVEL FLOW
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * 1) User uploads resume (PDF/Docx) from React frontend
+ * 2) Backend validates + stores file temporarily
+ * 3) Backend parses file using PDFBox (PDF) or Apache POI (Docx) → raw text
+ * 4) Backend sends text to Ollama (llama3.1:8b) with “brutal reviewer” prompt
+ * 5) Ollama returns JSON-like feedback (score, verdict, issues, actions)
+ * 6) Backend validates minimal fields and stores result in PostgreSQL
+ * 7) Frontend shows score, verdict, issues, action items nicely
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SCOPE (MVP ONLY – DO THESE)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ✅ Implement:
+ *   - File upload (PDF/Docx, max 5MB)
+ *   - Parsing (PDFBox/POI → text)
+ *   - LLM call (Ollama, local)
+ *   - Minimal JSON validation (overallScore required)
+ *   - Database persistence (User, Analysis)
+ *   - REST APIs (upload, analyze, get analysis)
+ *   - Simple React UI: upload page + results page
+ *
+ * ❌ Skip for now:
+ *   - OAuth / login
+ *   - Complex auth/roles
+ *   - Microservices, Kafka, Redis
+ *   - Complex JSON schema validation
+ *   - Fancy design, animations, responsiveness
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * BACKEND – SPRING BOOT ARCHITECTURE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Packages:
+ * com.resumeroaster
+ *   ├── controller      // REST endpoints
+ *   ├── service         // business logic
+ *   ├── repository      // JPA repositories
+ *   ├── entity          // JPA entities
+ *   ├── dto             // request/response objects
+ *   ├── exception       // custom exceptions + handler
+ *   └── config          // config (WebClient, CORS)
+ *
+ * Controllers:
+ *   - UploadController
+ *       POST /api/v1/upload      -> upload resume
+ *
+ *   - AnalysisController
+ *       POST /api/v1/analyze     -> trigger analysis (by uploadId)
+ *       GET  /api/v1/analysis/{id} -> fetch analysis result
+ *
+ *   - HealthController
+ *       GET /api/v1/health       -> { status: "ok", timestamp: ... }
+ *
+ * Services:
+ *   - StorageService
+ *       validateFile(MultipartFile file)
+ *       saveTempFile(MultipartFile file) -> Path
+ *
+ *   - ResumeParserService
+ *       parseResume(MultipartFile file) -> String rawText
+ *
+ *   - LLMAnalysisService
+ *       analyzeWithOllama(String resumeText) -> String analysisJson
+ *
+ *   - AnalysisService
+ *       createAnalysis(uploadId) -> Analysis entity
+ *       getAnalysis(Long id)     -> Analysis + mapped DTO
+ *
+ * Repositories:
+ *   - UserRepository extends JpaRepository<User, Long>
+ *   - AnalysisRepository extends JpaRepository<Analysis, Long>
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ENTITIES (JPA)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * User:
+ *   @Entity
+ *   @Table(name = "users")
+ *   - id: Long           (@Id, @GeneratedValue)
+ *   - email: String      (@Column(unique = true, nullable = false))
+ *   - name: String
+ *   - createdAt: LocalDateTime
+ *
+ * Analysis:
+ *   @Entity
+ *   @Table(name = "analyses")
+ *   - id: Long           (@Id, @GeneratedValue)
+ *   - filename: String   (max 255)
+ *   - fileSize: Long
+ *   - uploadedAt: LocalDateTime
+ *   - parsedText: String (@Column(columnDefinition = "TEXT"))
+ *   - analysisJson: String (@Column(columnDefinition = "TEXT"))
+ *   - overallScore: Integer
+ *   - tierPlacement: String  (e.g., "SERVICE_COMPANY")
+ *   - createdAt: LocalDateTime
+ *
+ * For MVP, ignore User linkage or just store null userId.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * DTOs
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * UploadResponse:
+ *   - uploadId: String (UUID)
+ *   - filename: String
+ *   - fileSize: Long
+ *   - status: String ("uploaded")
+ *
+ * AnalysisRequest:
+ *   - uploadId: String (@NotBlank)
+ *
+ * AnalysisResponse:
+ *   - analysisId: Long
+ *   - overallScore: Integer
+ *   - tierPlacement: String
+ *   - verdict: String
+ *   - topIssues: List<String>
+ *   - actionItems: List<String>
+ *
+ * ErrorResponse:
+ *   - error: String
+ *   - errorCode: String
+ *   - timestamp: String
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * LLM OUTPUT FORMAT (MVP – SIMPLE)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Expect Ollama to return JSON like:
+ *
+ * {
+ *   "overallScore": 6,
+ *   "tierPlacement": "SERVICE_COMPANY",
+ *   "verdict": "Your resume is average. Projects lack metrics...",
+ *   "topIssues": [
+ *     "Projects have no measurable impact",
+ *     "Experience bullets are generic"
+ *   ],
+ *   "actionItems": [
+ *     "Add metrics to 2 main projects",
+ *     "Rewrite experience using STAR format"
+ *   ]
+ * }
+ *
+ * Minimal validation:
+ *   - parse JSON string
+ *   - check "overallScore" exists and is 1–10
+ *   - other fields optional in MVP
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * OLLAMA INTEGRATION
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Prerequisites:
+ *   - Install and run Ollama locally
+ *   - Download model once: ollama pull llama3.1:8b
+ *
+ * Base URL:
+ *   - Default: http://localhost:11434
+ *
+ * Request (POST /api/generate):
+ *
+ * {
+ *   "model": "llama3.1:8b",
+ *   "prompt": "System: You are a brutal resume reviewer for software engineering candidates. Be honest and specific.\n\nUser: {resumeText}",
+ *   "stream": false,
+ *   "format": "json",
+ *   "options": {
+ *     "temperature": 0.3,
+ *     "num_predict": 2048
+ *   }
+ * }
+ *
+ * Response:
+ * {
+ *   "model": "llama3.1:8b",
+ *   "response": "{...JSON from schema above...}",
+ *   "done": true
+ * }
+ *
+ * Implement LLMAnalysisService using Spring WebClient:
+ *
+ * - Build request body (model, prompt, stream=false, format="json")
+ * - POST to /api/generate
+ * - Read response.response (String)
+ * - Return that JSON string
+ * - Handle timeout + errors → throw custom LLMException
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * VALIDATION & ERROR HANDLING
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * File validation rules:
+ *   - Max size: 5MB (5 * 1024 * 1024)
+ *   - Allowed types:
+ *       "application/pdf"
+ *       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+ *
+ * Custom exceptions:
+ *   - FileTooLargeException
+ *   - InvalidFileTypeException
+ *   - ParsingException
+ *   - LLMException
+ *
+ * GlobalExceptionHandler:
+ *   - Map specific exceptions to HTTP status + ErrorResponse
+ *   - FileTooLargeException     → 413 ERR_FILE_TOO_LARGE
+ *   - InvalidFileTypeException  → 400 ERR_INVALID_FILE_TYPE
+ *   - ParsingException          → 400 ERR_PARSING_FAILED
+ *   - LLMException              → 500 ERR_LLM_FAILED
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * CONFIG (application.properties)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * server.port=8080
+ *
+ * spring.servlet.multipart.max-file-size=5MB
+ * spring.servlet.multipart.max-request-size=5MB
+ *
+ * spring.datasource.url=jdbc:postgresql://localhost:5432/resume_roaster
+ * spring.datasource.username=postgres
+ * spring.datasource.password=postgres
+ * spring.jpa.hibernate.ddl-auto=update
+ * spring.jpa.show-sql=true
+ *
+ * ollama.base-url=http://localhost:11434
+ * ollama.model=llama3.1:8b
+ * ollama.timeout=90
+ *
+ * logging.level.com.resumeroaster=DEBUG
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * DEPENDENCIES (pom.xml – MINIMUM)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * - spring-boot-starter-web
+ * - spring-boot-starter-data-jpa
+ * - spring-boot-starter-validation
+ * - spring-boot-starter-webflux    (for WebClient)
+ * - postgresql
+ * - pdfbox
+ * - poi-ooxml
+ * - lombok
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REACT FRONTEND (BRIEF GUIDE)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Tech:
+ *   - React (CRA or Vite)
+ *   - Axios
+ *   - Tailwind (optional)
+ *
+ * Flow:
+ *   - Upload component:
+ *       1. Pick file (input type="file")
+ *       2. POST /api/v1/upload (multipart)
+ *       3. Use uploadId from response
+ *       4. POST /api/v1/analyze { uploadId }
+ *       5. GET /api/v1/analysis/{analysisId}
+ *       6. Pass result to Results component
+ *
+ *   - Results component:
+ *       - Show overallScore, tierPlacement, verdict, issues, actionItems
+ *       - Button “Analyze Another” resets state
+ *
+ * This is enough to call it a full-stack project for Tier 2 interviews.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * COPILOT USAGE – PATTERNS
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * 1) BEFORE writing a method, write a clear Javadoc-style comment
+ * 2) Then type method signature and let Copilot complete body
+ * 3) Keep this file open in VS Code for context
+ *
+ * Example: Parsing method
+ *
+ * /**
+ *  * Parse uploaded resume file (PDF or Docx) using PDFBox/POI and return
+ *  * extracted text as a single String. For PDF: use PDDocument + PDFTextStripper.
+ *  * For Docx: use XWPFDocument to read paragraphs. Throw ParsingException if
+ *  * file is corrupted or contains no readable text.
+ *  */
+ * public String parseResume(MultipartFile file) throws ParsingException {
+ *     // Copilot should generate the full method
+ * }
+ *
+ * Example: Ollama call
+ *
+ * /**
+ *  * Call local Ollama LLM to analyze resume text. Build JSON request with model
+ *  * name, prompt, stream=false, format="json". POST to /api/generate using
+ *  * WebClient, with 90-second timeout. Parse response.response as JSON string.
+ *  * Validate that JSON contains overallScore, otherwise throw LLMException.
+ *  */
+ * public String analyzeWithOllama(String resumeText) throws LLMException {
+ *     // Copilot fills this
+ * }
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * INTERVIEW SUMMARY (USE THIS AS YOUR STORY)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * “I built Resume Roaster, a full-stack AI resume reviewer. The backend is
+ * Spring Boot with PostgreSQL and integrates Ollama as a local LLM instead of
+ * paid APIs to keep costs at zero. It parses PDF/Docx resumes, sends the text
+ * to the model with a ‘brutal reviewer’ prompt, validates the JSON feedback,
+ * and stores analysis results. The frontend is a simple React app where users
+ * upload resumes and see a score, verdict, issues, and action items. This
+ * project shows full-stack skills, API design, AI integration, and deployment
+ * readiness, targeted at Tier 2 companies.”
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * END OF COPILOT GUIDE – KEEP THIS FILE OPEN IN VS CODE
+ * ═══════════════════════════════════════════════════════════════════════════
+ */

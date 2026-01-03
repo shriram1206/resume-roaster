@@ -27,7 +27,7 @@ public class AnalysisService {
 
     private final StorageService storageService;
     private final ResumeParserService resumeParserService;
-    private final LLMAnalysisService llmAnalysisService;
+    private final GroqService groqService;
     private final AnalysisRepository analysisRepository;
     private final ObjectMapper objectMapper;
 
@@ -48,8 +48,8 @@ public class AnalysisService {
         // 2. Parse resume text
         String parsedText = resumeParserService.parseResume(filePath);
 
-        // 3. Analyze with LLM
-        String analysisJson = llmAnalysisService.analyzeWithOllama(parsedText);
+        // 3. Analyze with Groq API
+        String analysisJson = groqService.analyzeResume(parsedText, "General professional position");
 
         // 4. Extract fields from JSON
         JsonNode jsonNode = parseJson(analysisJson);
@@ -97,15 +97,16 @@ public class AnalysisService {
 
     private AnalysisResponse buildResponse(Analysis analysis, JsonNode jsonNode) {
         List<String> topIssues = extractStringList(jsonNode, "topIssues");
-        List<String> actionItems = extractStringList(jsonNode, "actionItems");
+        List<String> issues = extractStringList(jsonNode, "issues");
+        List<String> improvements = extractStringList(jsonNode, "improvements");
 
         return AnalysisResponse.builder()
                 .analysisId(analysis.getId())
                 .overallScore(analysis.getOverallScore())
                 .tierPlacement(analysis.getTierPlacement())
-                .verdict(jsonNode.path("verdict").asText(null))
-                .topIssues(topIssues)
-                .actionItems(actionItems)
+                .verdict(jsonNode.path("summary").asText(null))
+                .topIssues(issues)
+                .actionItems(improvements)
                 .build();
     }
 

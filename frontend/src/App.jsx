@@ -140,7 +140,7 @@ function App() {
             <div className="score-card">
               <div className="score-circle">
                 <span className="score-number">{analysis.overallScore}</span>
-                <span className="score-max">/10</span>
+                <span className="score-max">/100</span>
               </div>
               <div 
                 className="tier-badge" 
